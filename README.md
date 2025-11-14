@@ -1,1 +1,1 @@
-Semplice repository dove inserire certificati e documentazione
+Tesi e certificati
