@@ -11,32 +11,28 @@ Anno accademico 2024/2025
 Questo repository contiene il codice e la documentazione dell'elaborato finale dal titolo  
 **"Un connettore per lo storage dei dati per la piattaforma iLog"**.
 
-Il progetto propone una nuova architettura per la gestione dei dati in streaming della piattaforma **iLog**, sostituendo i database tradizionali (Cassandra e PostgreSQL) con una pipeline basata su tecnologie moderne per Big Data.
+Il progetto propone una nuova architettura per la gestione dei dati in streaming della piattaforma **iLog**, evolvendo la soluzione esistente (Cassandra + PostgreSQL) con una pipeline basata su tecnologie moderne per Big Data. I dati vengono letti da Apache Kafka, processati da un job Apache Flink e scritti in formato Delta Lake (Parquet) su MinIO, il tutto orchestrato su Kubernetes.
 
 ---
 
-## Architettura proposta
+## Architettura
 
 ```
-Apache Kafka  →  Apache Flink  →  Delta Lake  →  MinIO (S3-compatible)
-   (source)        (processing)     (format)       (object storage)
+┌──────────────────────────────────────────────────────────┐
+│                        Kubernetes                        │
+│                                                          │
+│  ┌──────────┐    ┌──────────────┐    ┌─────────────────┐ │
+│  │  Kafka   │───▶│  Flink Job   │───▶│  MinIO (S3)     │ │
+│  │(+Zoo-    │    │  (Job +      │    │  Delta Lake /   │ │
+│  │ keeper)  │    │  Task Mgr)   │    │  Parquet files  │ │
+│  └──────────┘    └──────────────┘    └─────────────────┘ │
+│       ▲                                                   │
+│  ┌──────────────────┐                                     │
+│  │ message-producer │  (Spring Boot — genera messaggi     │
+│  │  (Spring Boot)   │   di test su Kafka)                 │
+│  └──────────────────┘                                     │
+└──────────────────────────────────────────────────────────┘
 ```
-
-I dati generati dai sensori iLog vengono pubblicati su topic Kafka. Il job Flink li legge in streaming, li converte in formato **Parquet** tramite **Delta Lake** e li scrive in bucket **MinIO**, organizzati per esperimento iLog.
-
----
-
-## Tecnologie utilizzate
-
-| Componente | Tecnologia | Versione consigliata |
-|---|---|---|
-| Streaming source | Apache Kafka | 3.x |
-| Stream processing | Apache Flink | 1.17+ |
-| Storage layer | Delta Lake | compatibile con Flink 1.17+ |
-| Object storage | MinIO | latest |
-| File format | Apache Parquet | — |
-| Orchestrazione | Kubernetes | — |
-| Linguaggio | Java | 11+ |
 
 ---
 
@@ -44,12 +40,21 @@ I dati generati dai sensori iLog vengono pubblicati su topic Kafka. Il job Flink
 
 ```
 .
-├── src/
-│   └── main/java/demo/
-│       ├── DemoApplication.java    # entry point del job Flink
-│       ├── model/
-│       │   └── Message.java        # POJO per i messaggi Kafka
-│       └── ...
+├── k8s/                         # Manifest Kubernetes
+│   ├── configMapFlink.yaml      # ConfigMap con config Flink, S3 e logging
+│   ├── jobmanager.yaml          # Deployment + Service del JobManager Flink
+│   ├── taskmanager.yaml         # Deployment dei TaskManager Flink (2 repliche)
+│   ├── kafka.yaml               # Deployment + Service di Kafka
+│   ├── kafka-ui.yaml            # Kafka UI (Provectus)
+│   ├── zookeeper.yaml           # Deployment + Service di Zookeeper
+│   ├── minio.yaml               # Deployment + Service di MinIO
+│   ├── minio-console.yaml       # Ingress per MinIO Console
+│   └── message-producer.yaml    # Deployment + Service + Ingress del producer
+│
+├── src/                         # Codice sorgente (Spring Boot — message producer)
+├── Dockerfile                   # Build multi-stage (Maven + Amazon Corretto 17)
+├── pom.xml                      # Dipendenze Maven (Spring Boot 3.3.2, Kafka)
+├── mvnw / mvnw.cmd              # Maven wrapper
 ├── tesi/
 │   └── Tesi_Angeli_Alessia_226817.pdf
 └── README.md
@@ -57,67 +62,127 @@ I dati generati dai sensori iLog vengono pubblicati su topic Kafka. Il job Flink
 
 ---
 
+## Tecnologie utilizzate
+
+| Componente | Tecnologia | Versione |
+|---|---|---|
+| Streaming source | Apache Kafka (Bitnami) | 3.x |
+| Coordinamento Kafka | Apache Zookeeper (Bitnami) | 3.8 |
+| Stream processing | Apache Flink | 1.19.1 |
+| Storage layer | Delta Lake | — |
+| Object storage | MinIO (Bitnami) | latest |
+| File format | Apache Parquet | — |
+| Message producer | Spring Boot | 3.3.2 |
+| Linguaggio | Java | 17 |
+| Orchestrazione | Kubernetes | — |
+| Build | Maven | 3.9.1 |
+
+---
+
 ## Prerequisiti
 
-- Java 11 o superiore
-- Apache Flink 1.17+ installato o cluster Kubernetes disponibile
-- Istanza Kafka raggiungibile (es. `kafka-service:9092`)
-- Istanza MinIO raggiungibile (es. `http://minio-service:9000`)
-- Dipendenze Maven: `flink-connector-kafka`, `delta-flink`, `hadoop-aws`
+- Kubernetes cluster attivo (es. Minikube, k3s o cluster remoto)
+- `kubectl` configurato
+- Docker (per la build dell'immagine del message producer)
+
+---
+
+## Deploy su Kubernetes
+
+Applicare i manifest nell'ordine seguente:
+
+```bash
+# 1. Zookeeper (richiesto da Kafka)
+kubectl apply -f k8s/zookeeper.yaml
+
+# 2. Kafka
+kubectl apply -f k8s/kafka.yaml
+
+# 3. Kafka UI (opzionale — per monitorare i topic)
+kubectl apply -f k8s/kafka-ui.yaml
+
+# 4. MinIO
+kubectl apply -f k8s/minio.yaml
+kubectl apply -f k8s/minio-console.yaml
+
+# 5. Flink (ConfigMap prima dei pod)
+kubectl apply -f k8s/configMapFlink.yaml
+kubectl apply -f k8s/jobmanager.yaml
+kubectl apply -f k8s/taskmanager.yaml
+
+# 6. Message producer
+kubectl apply -f k8s/message-producer.yaml
+```
+
+Per verificare che i pod siano in esecuzione:
+
+```bash
+kubectl get pods
+```
+
+---
+
+## Build del message producer
+
+```bash
+# Build locale
+./mvnw clean package
+
+# Build immagine Docker
+docker build -t message-producer:0.0 .
+```
+
+> L'immagine usa un build multi-stage: Maven 3.9.1 + Amazon Corretto 17 per la build, Amazon Corretto 17 Alpine come runtime finale.
 
 ---
 
 ## Configurazione
 
-Prima di avviare il job, verificare i seguenti parametri in `DemoApplication.java`:
+Le credenziali e gli endpoint sono definiti in `k8s/configMapFlink.yaml`:
 
-```java
-// Kafka
-.setBootstrapServers("kafka-service:9092")
-.setTopics("my-topic")
-.setGroupId("my-group")
-
-// MinIO
-hadoopConfig.set("fs.s3a.endpoint", "http://minio-service:9000");
-hadoopConfig.set("fs.s3a.access.key", "miniouser");
-hadoopConfig.set("fs.s3a.secret.key", "miniopassword");
-hadoopConfig.set("fs.s3a.path.style", "true");
-
-// Destinazione Delta Lake
-new Path("s3a://your-bucket-name/table1")
+```yaml
+s3.access-key: miniouser
+s3.secret-key: miniopassword
+s3.endpoint: http://minio-service:9000
+s3.path.style.access: true
 ```
 
-In un ambiente di produzione questi valori andrebbero esternalizzati tramite file di configurazione o variabili d'ambiente.
+Le credenziali MinIO sono impostate in `k8s/minio.yaml`:
 
----
-
-## Avvio
-
-Compilare il progetto con Maven:
-
-```bash
-mvn clean package
+```yaml
+MINIO_ROOT_USER: miniouser
+MINIO_ROOT_PASSWORD: miniopassword
 ```
 
-Sottomettere il job a Flink:
-
-```bash
-flink run -c demo.DemoApplication target/your-app.jar
-```
+> ⚠️ In un ambiente di produzione sostituire le credenziali con Kubernetes Secrets.
 
 ---
 
 ## Formato dei messaggi Kafka
 
-I messaggi attesi sul topic Kafka sono in formato JSON con la seguente struttura:
+I messaggi prodotti e consumati sono in formato JSON:
 
 ```json
 {
   "id": "sensor-001",
   "timestamp": 1700000000.0,
-  "content": "valore rilevato"
+  "content": "valore rilevato dal sensore"
 }
 ```
+
+---
+
+## Porte esposte
+
+| Servizio | Porta interna | NodePort |
+|---|---|---|
+| Kafka | 9092 | 31092 |
+| Kafka (external) | 9097 | 31097 |
+| Kafka UI | 8080 | — |
+| Flink UI | 8081 | — |
+| MinIO API | 9000 | — |
+| MinIO Console | 9001 | — |
+| Message Producer | 8080 | — |
 
 ---
 
@@ -128,7 +193,7 @@ Durante lo sviluppo è emerso un problema con il **checkpointing di Flink**: i c
 Possibili soluzioni future:
 - Aggiornare il connettore Delta a una versione compatibile con Flink 1.17+
 - Valutare `FileSystemLogSink` come alternativa
-- Migliorare il monitoraggio della pipeline per isolare il punto critico
+- Aggiungere strumenti di monitoraggio avanzati per isolare il punto critico della pipeline
 
 ---
 
@@ -139,4 +204,3 @@ Possibili soluzioni future:
 - [Apache Flink documentation](https://nightlies.apache.org/flink/flink-docs-master/)
 - [Apache Kafka documentation](https://kafka.apache.org/documentation/)
 - [MinIO documentation](https://min.io/product/overview)
-
