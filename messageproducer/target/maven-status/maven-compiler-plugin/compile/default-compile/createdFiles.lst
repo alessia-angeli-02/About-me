@@ -1,0 +1,7 @@
+com/example/messageproducer/MessageProducerApplication.class
+com/example/messageproducer/config/AutowiringSpringBeanJobFactory.class
+com/example/messageproducer/config/KafkaTopicConfig.class
+com/example/messageproducer/config/QuartzConfig.class
+com/example/messageproducer/controller/MessageProducerController.class
+com/example/messageproducer/model/Message.class
+com/example/messageproducer/quartz/KafkaMessageJob.class

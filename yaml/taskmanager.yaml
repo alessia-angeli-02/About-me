@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskmanager
+spec:
+  selector:
+    matchLabels:
+      app: flink
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: task
+    spec:
+      containers:
+        - name: task
+          image: flink:1.19.1 #flink:1.19.1
+          #workingDir: /opt/flink
+          args:
+            - taskmanager
+          volumeMounts:
+            - name: config-volume
+              mountPath: /opt/flink/conf
+          ports:
+            - containerPort: 6121
+              name: data
+            - containerPort: 6122
+              name: rpc
+            - containerPort: 6125
+              name: query
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: jobmanager
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-hadoop-1.19.1.jar
+          securityContext:
+            runAsUser: 9999
+      volumes:
+        - name: config-volume
+          configMap:
+            name: config-flink
+            items:
+            - key: config.yaml
+              path: config.yaml
+            - key: log4j-console.properties
+              path: log4j-console.properties

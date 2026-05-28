@@ -1,0 +1,7 @@
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/MessageProducerApplication.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/config/AutowiringSpringBeanJobFactory.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/config/KafkaTopicConfig.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/config/QuartzConfig.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/controller/MessageProducerController.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/model/Message.java
+/Users/leo/Downloads/message_producer/message_producer/src/main/java/com/example/messageproducer/quartz/KafkaMessageJob.java
